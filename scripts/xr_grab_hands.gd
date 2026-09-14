@@ -1,61 +1,71 @@
 ## TEMPLATE FILE ############################
-# Picking things up with controllers!
+# Picking things up with hands!
 #############################################
 
 extends Area3D
-class_name XRGrabber
+class_name XRHandGrabber
 
 
-## Which controller action grabs. Choose an openxr action map bind.
-@export var grab_action := "grip_click"
+## Which hand
+@export_enum("Left", "Right") var hand := 0
 
-## If set, only bodies in this specific group can be picked up. Useful if you don't
-## want ALL rigidbodies to be pickable.
+## Distance between fingertips that a valid grab is registered. The two distinct
+## values are used for hysteresis. In short, the pinch initiates when distance
+## goes below pinch distance, and releases only when it crosses release distance.
+## This is to prevent flickering in the middle and is a useful concept to remember.
+@export_range(0.005, 0.1) var pinch_distance := 0.02
+@export_range(0.005, 0.1) var release_distance := 0.04
+
+## If set, only objects in this group can be grabbed via hands.
 @export var required_group := ""
 
 ## Multiplies how hard objects are thrown. Sometimes it can feel more satisfying to
 ## bump this up to ~1.2 ish
 @export_range(0.5, 2) var throw_strength := 1.0
 
-## If you want a satisfying little haptic blip when you grab something :)
-@export var haptics := true
-
-var _controller: XRController3D = null
 var _held: RigidBody3D = null
+var _pinching := false
 
-# So we can store where the object was when you grabbed it, so it doesn't snap to the
-# middle of your palm
+# Same ideas as the other controller grab script.
 var _grab_offset := Transform3D.IDENTITY
-
-# Hand velocity/pos storage to throw
 var _last_position := Vector3.ZERO
 var _velocity := Vector3.ZERO
 
 
 func _ready() -> void:
-	# Ensure the script is a child of an XRController3D. If not, disable it
-	_controller = get_parent() as XRController3D
-	if _controller == null:
-		push_error("XRGrabber|FATAL: this node must be a child of an XRController3D")
+	# Ensure the script is a child of the XROrigin3D.
+	if get_parent() as XROrigin3D == null:
+		push_error("XRHandGrabber|FATAL: this node must be a child of an XROrigin3D")
 		set_physics_process(false)
-		return
-
-	_controller.button_pressed.connect(_on_button_pressed)
-	_controller.button_released.connect(_on_button_released)
-
-
-func _on_button_pressed(action: String) -> void:
-	if action == grab_action:
-		_grab()
-
-
-func _on_button_released(action: String) -> void:
-	if action == grab_action:
-		_release()
 
 
 func _physics_process(delta: float) -> void:
-	# Universal killswitch for when no object is held
+	var tracker := _find_tracker()
+
+	# If hand tracking disables, stop tracking and drop the object
+	if not _actually_tracking(tracker):
+
+		# Drop the object
+		if _pinching:
+			_pinching = false
+			_release()
+
+		return
+
+	# Compute the center pinch point
+	var thumb_pos := _joint_position(tracker, XRHandTracker.HAND_JOINT_THUMB_TIP)
+	var index_pos := _joint_position(tracker, XRHandTracker.HAND_JOINT_INDEX_FINGER_TIP)
+	position = (thumb_pos + index_pos) * 0.5
+
+	# Pinch edge detection with hysteresis
+	var distance := thumb_pos.distance_to(index_pos)
+	if not _pinching and (distance < pinch_distance):
+		_pinching = true
+		_grab()
+	elif _pinching and (distance > release_distance):
+		_pinching = false
+		_release()
+
 	if _held == null:
 		return
 
@@ -84,7 +94,7 @@ func _grab() -> void:
 
 	_held = body
 
-	# Freeze the body kinematically. Can still push others around but cannot experience gravity or similar.
+	# Stop physics from acting on the grabbed object. This will still allow it to push things around
 	_held.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
 	_held.freeze = true
 
@@ -97,9 +107,6 @@ func _grab() -> void:
 	_grab_offset = global_transform.affine_inverse() * _held.global_transform
 	_last_position = _held.global_position
 	_velocity = Vector3.ZERO
-
-	if haptics:
-		_controller.trigger_haptic_pulse("haptic", 0.0, 0.5, 0.1, 0.0)
 
 
 func _release() -> void:
@@ -116,7 +123,7 @@ func _release() -> void:
 	_velocity = Vector3.ZERO
 
 
-## Closest grabbable body currently inside the grab volume, or null.
+## Closest grabbable body currently inside the grab volume, or null
 func _nearest_body() -> RigidBody3D:
 	var best: RigidBody3D = null
 	var best_distance := INF
@@ -139,3 +146,25 @@ func _nearest_body() -> RigidBody3D:
 			best = rigid
 
 	return best
+
+
+func _find_tracker() -> XRHandTracker:
+	return XRServer.get_tracker(XRHandVisuals.HAND_TRACKERS[hand]) as XRHandTracker
+
+
+# Same check as xr_hands.gd
+func _actually_tracking(tracker: XRHandTracker) -> bool:
+	if tracker == null or not tracker.get_has_tracking_data():
+		return false
+
+	var source := tracker.get_hand_tracking_source()
+	return (source != XRHandTracker.HAND_TRACKING_SOURCE_CONTROLLER
+		and source != XRHandTracker.HAND_TRACKING_SOURCE_NOT_TRACKED)
+
+
+# Joint position in XROrigin3D space. Same conversion xr_hands.gd uses to place its meshes.
+#
+# The way this transform works, is that we first scale the point according to world scale, then we apply
+# the transformation from tracking space to godot node-space.
+func _joint_position(tracker: XRHandTracker, joint: int) -> Vector3:
+	return XRServer.get_reference_frame() * (tracker.get_hand_joint_transform(joint).origin * XRServer.world_scale)

@@ -12,6 +12,9 @@
 [ext_resource type="Shader" uid="uid://dng7yarei1gge" path="res://assets/shaders/iridescent.gdshader" id="10_irid"]
 [ext_resource type="Script" uid="uid://u4v467pv0cty" path="res://scripts/xr_grab.gd" id="11_grab"]
 [ext_resource type="Script" uid="uid://cabtbicn2evsq" path="res://scripts/xr_move.gd" id="12_move"]
+[ext_resource type="Shader" uid="uid://b6ydk431jky8p" path="res://assets/shaders/per_eye_color.gdshader" id="12_ycdy4"]
+[ext_resource type="Shader" uid="uid://b3b2pbfumuxm4" path="res://assets/shaders/left_eye.gdshader" id="13_vivmo"]
+[ext_resource type="Shader" uid="uid://blrqyx0st2vu6" path="res://assets/shaders/right_eye.gdshader" id="14_2cqfq"]
 
 [sub_resource type="SphereShape3D" id="SphereShape3D_grab"]
 radius = 0.08
@@ -563,6 +566,32 @@ height = 0.14
 height = 0.14
 radius = 0.04
 
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_w48qg"]
+render_priority = 0
+shader = ExtResource("12_ycdy4")
+shader_parameter/left_eye_color = Color(0.25, 0.53, 0.96, 1)
+shader_parameter/right_eye_color = Color(0.71, 0.25, 0.96, 1)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_yaehf"]
+render_priority = 0
+shader = ExtResource("13_vivmo")
+
+[sub_resource type="TextMesh" id="TextMesh_lts4m"]
+text = "left eye"
+uppercase = true
+pixel_size = 0.001
+depth = 0.01
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_074og"]
+render_priority = 0
+shader = ExtResource("14_2cqfq")
+
+[sub_resource type="TextMesh" id="TextMesh_cegan"]
+text = "right eye"
+uppercase = true
+pixel_size = 0.001
+depth = 0.01
+
 [node name="Main" type="Node3D" unique_id=500145794]
 script = ExtResource("1_ig7tw")
 
@@ -674,11 +703,22 @@ shape = SubResource("CylinderShape3D_prop")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9039176, -0.71345115)
 
 [node name="Mesh" type="MeshInstance3D" parent="Props/Box2" unique_id=822659639]
+material_override = SubResource("ShaderMaterial_w48qg")
 mesh = SubResource("BoxMesh_prop")
 
 [node name="Collision" type="CollisionShape3D" parent="Props/Box2" unique_id=47353824]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.0020998716)
 shape = SubResource("BoxShape3D_prop")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Props/Box2" unique_id=2076739899]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.019794822, 0.04300797)
+material_override = SubResource("ShaderMaterial_yaehf")
+mesh = SubResource("TextMesh_lts4m")
+
+[node name="righteye" type="MeshInstance3D" parent="Props/Box2" unique_id=2135147407]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.014873862, 0.04375124)
+material_override = SubResource("ShaderMaterial_074og")
+mesh = SubResource("TextMesh_cegan")
 
 [node name="SunLight" type="DirectionalLight3D" parent="." unique_id=1844096403]
 transform = Transform3D(0.86601907, -0.3535631, 0.35355926, 0, 0.70710295, 0.70711064, -0.500011, -0.61237127, 0.6123646, 0, 2.9986405, 0)
