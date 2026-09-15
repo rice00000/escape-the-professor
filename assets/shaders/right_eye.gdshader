@@ -1,3 +1,7 @@
+// TEMPLATE FILE #############################
+// will not show in your left eye.
+//############################################
+
 shader_type spatial;
 
 void fragment() {
