@@ -671,26 +671,26 @@ shape = SubResource("BoxShape3D_vivmo")
 
 [node name="Props" type="Node3D" parent="." unique_id=546788418]
 
-[node name="CoolBox" type="RigidBody3D" parent="Props" unique_id=1568289628]
+[node name="Box" type="RigidBody3D" parent="Props" unique_id=1568289628]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.28429145, 0.89793026, -0.59422106)
 
-[node name="Mesh" type="MeshInstance3D" parent="Props/CoolBox" unique_id=1991983902]
+[node name="Mesh" type="MeshInstance3D" parent="Props/Box" unique_id=1991983902]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.09934425)
 material_override = SubResource("ShaderMaterial_prop_grid")
 mesh = SubResource("BoxMesh_prop")
 
-[node name="Collision" type="CollisionShape3D" parent="Props/CoolBox" unique_id=64314266]
+[node name="Collision" type="CollisionShape3D" parent="Props/Box" unique_id=64314266]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.09825504)
 shape = SubResource("BoxShape3D_prop")
 
-[node name="HoloBall" type="RigidBody3D" parent="Props" unique_id=362352031]
+[node name="Ball" type="RigidBody3D" parent="Props" unique_id=362352031]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.95, -0.6)
 
-[node name="Mesh" type="MeshInstance3D" parent="Props/HoloBall" unique_id=1380581418]
+[node name="Mesh" type="MeshInstance3D" parent="Props/Ball" unique_id=1380581418]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.12304139)
 mesh = SubResource("SphereMesh_prop")
 
-[node name="Collision" type="CollisionShape3D" parent="Props/HoloBall" unique_id=1357242908]
+[node name="Collision" type="CollisionShape3D" parent="Props/Ball" unique_id=1357242908]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.121456295)
 shape = SubResource("SphereShape3D_prop")
 
