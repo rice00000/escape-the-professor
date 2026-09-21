@@ -1,19 +1,15 @@
-# VR/AR@MIT Godot XR Project Template
+# Escape the Professor
 
-Features basic XR setup, dynamic controller/hand models for both hand and regular tracking, passthrough setup, and other basic scaffolds.
+This is a small Godot XR prototype built on the original VR/AR@MIT XR template. Each round generates an 11x11 cube maze. Reach the green exit before the professor catches you. Orange wall blocks can be moved to open a route; the professor spends 2.5 seconds breaking a block that blocks his route.
 
-## 1 Template Capabilities
+## Run
 
-This template contains:
-- Prebuilt XR setup
-- Controller/hand tracking visuals
-- Some examples of code and similar for gdscript
-- Grabbing support in both controller (grip) and hand tracking (pinch)
-- Cool XR shader examples
-- General ideas to kickstart your own project!
+Open the project folder in Godot 4.7 (or a compatible Godot 4 build) and run the main scene. OpenXR is used automatically when a headset runtime is available. Without a headset, the same scene starts in desktop mode.
 
-## 2 Installation / Setup
+## Controls
 
-A set of slides also detailing this process can be found here: https://docs.google.com/presentation/d/1k10QOjVzC8dSaK8WAtLZF0jyv3P6TW-NY8ZJmvSjivk/edit?usp=sharing
+- Desktop: `WASD` moves, mouse looks, `E` grabs/releases the nearest orange block, `R` starts a new maze, `Esc` releases the mouse.
+- XR: use the existing left controller thumbstick for smooth movement, the right thumbstick for snap turning, and grip/pinch to grab orange blocks.
+- The exit's spatial musical pulse becomes faster as you approach it. The professor has a separate low footstep/threat tone.
 
-Written instructions here coming soon tm
+The maze, professor, blocks, exit, lights, HUD and generated audio are created by `main.gd` at runtime with primitive Godot nodes. No external game assets are required.
