@@ -38,7 +38,9 @@ var desktop_camera: Camera3D
 var hud: Label
 var status_label: Label
 var player_origin: XROrigin3D
-var held_desktop_block: RigidBody3D
+var player_collision: MazePlayer
+var held_desktop_block: GrabbableWall
+var desktop_hold_transform := Transform3D.IDENTITY
 var camera_pitch := 0.0
 var last_e_down := false
 
@@ -137,6 +139,10 @@ func _setup_desktop_camera() -> void:
 	desktop_camera.current = true
 	desktop_camera.fov = 76.0
 	player_origin.add_child(desktop_camera)
+	player_collision = MazePlayer.new()
+	player_collision.name = "MazePlayer"
+	add_child(player_collision)
+	player_collision.setup(player_origin, desktop_camera, maze, movable_blocks, MAZE_SIZE, CELL_SIZE)
 
 
 func _setup_hud() -> void:
@@ -226,6 +232,7 @@ func _generate_maze() -> void:
 func _build_maze() -> void:
 	var floor_body := StaticBody3D.new()
 	floor_body.name = "MazeFloor"
+	floor_body.add_to_group("maze_floor")
 	maze_root.add_child(floor_body)
 	_add_box(floor_body, Vector3(MAZE_SIZE * CELL_SIZE, 0.1, MAZE_SIZE * CELL_SIZE), Vector3.ZERO, floor_material, false)
 	_add_wood_floor_detail()
@@ -235,6 +242,7 @@ func _build_maze() -> void:
 			if not maze[row][col]:
 				var wall := StaticBody3D.new()
 				wall.name = "Wall_%d_%d" % [col, row]
+				wall.add_to_group("maze_wall")
 				maze_root.add_child(wall)
 				_add_box(wall, Vector3(CELL_SIZE, WALL_HEIGHT, CELL_SIZE), _cell_to_world(Vector2i(col, row)) + Vector3.UP * WALL_HEIGHT * 0.5, wall_material, false)
 	var route := _find_path(Vector2i(1, 1), Vector2i(MAZE_SIZE - 2, MAZE_SIZE - 2), false)
@@ -273,13 +281,14 @@ func _build_maze() -> void:
 
 
 func _create_movable_block(cell: Vector2i) -> void:
-	var block := RigidBody3D.new()
+	var block := GrabbableWall.new()
 	block.name = "MovableWall_%d_%d" % [cell.x, cell.y]
 	block.position = _cell_to_world(cell) + Vector3.UP * (WALL_HEIGHT * 0.5)
 	block.mass = 4.0
 	block.freeze = false
 	block.add_to_group("grabbable")
 	block.add_to_group("movable_wall")
+	block.set_meta("player_origin", player_origin)
 	maze_root.add_child(block)
 	_add_box(block, Vector3(CELL_SIZE * 0.92, WALL_HEIGHT * 0.92, CELL_SIZE * 0.92), Vector3.ZERO, movable_material, true)
 	movable_blocks[cell] = block
@@ -329,6 +338,7 @@ func _add_wood_floor_detail() -> void:
 func _add_ceiling_and_lights() -> void:
 	var ceiling_body := StaticBody3D.new()
 	ceiling_body.name = "SchoolCeiling"
+	ceiling_body.add_to_group("maze_wall")
 	maze_root.add_child(ceiling_body)
 	var map_span := MAZE_SIZE * CELL_SIZE + CELL_SIZE * 0.8
 	_add_box(ceiling_body, Vector3(map_span, 0.14, map_span), Vector3(0.0, WALL_HEIGHT + 0.68, 0.0), ceiling_material, false)
@@ -473,6 +483,7 @@ func _process(delta: float) -> void:
 	_handle_desktop_look()
 	_handle_player_movement(delta)
 	_handle_desktop_grab()
+	_sync_movable_block_cells()
 	_update_professor(delta)
 	_update_exit_audio(delta)
 	_check_end_conditions()
@@ -527,22 +538,12 @@ func _desktop_movement_direction(input: Vector2) -> Vector3:
 
 
 func _try_move_player(offset: Vector3) -> void:
-	var next := player_origin.global_position + offset
-	if _is_walkable(next):
-		player_origin.global_position = next
-	else:
-		var x_only := player_origin.global_position + Vector3(offset.x, 0.0, 0.0)
-		var z_only := player_origin.global_position + Vector3(0.0, 0.0, offset.z)
-		if _is_walkable(x_only): player_origin.global_position = x_only
-		elif _is_walkable(z_only): player_origin.global_position = z_only
+	if player_collision:
+		player_collision.try_move(offset, held_desktop_block)
 
 
 func _is_walkable(world_position: Vector3) -> bool:
-	var cell := _world_to_cell(world_position)
-	if cell.x < 0 or cell.y < 0 or cell.x >= MAZE_SIZE or cell.y >= MAZE_SIZE: return false
-	if not maze[cell.y][cell.x]: return false
-	if movable_blocks.has(cell) and movable_blocks[cell] != held_desktop_block: return false
-	return true
+	return player_collision == null or player_collision.is_walkable(world_position, held_desktop_block)
 
 
 func _handle_desktop_grab() -> void:
@@ -550,23 +551,83 @@ func _handle_desktop_grab() -> void:
 	var down := Input.is_key_pressed(KEY_E)
 	if down and not last_e_down:
 		if held_desktop_block:
-			held_desktop_block.freeze = false
-			held_desktop_block = null
+			# The release remains latched until the block has room away from the
+			# player. This prevents an easy E press from trapping the player.
+			if _prepare_desktop_drop() and held_desktop_block.drop_with_velocity(Vector3.ZERO):
+				held_desktop_block = null
 		else:
 			held_desktop_block = _nearest_block(2.4)
-			if held_desktop_block: held_desktop_block.freeze = true
+			if held_desktop_block and held_desktop_block.begin_hold():
+				desktop_hold_transform = held_desktop_block.global_transform
 	last_e_down = down
 	if held_desktop_block and is_instance_valid(held_desktop_block):
-		var target := desktop_camera.global_position - desktop_camera.global_transform.basis.z * 1.25
-		held_desktop_block.global_position = target
+		var target := desktop_camera.global_transform
+		target.origin = desktop_camera.global_position - desktop_camera.global_transform.basis.z * 1.25
+		if held_desktop_block.set_held_transform(target):
+			desktop_hold_transform = target
+		else:
+			# Keep the most recent clear pose when the camera faces a solid wall.
+			held_desktop_block.global_transform = desktop_hold_transform
 
 
-func _nearest_block(max_distance: float) -> RigidBody3D:
-	var best: RigidBody3D
+func _prepare_desktop_drop() -> bool:
+	if held_desktop_block == null or player_origin == null:
+		return false
+	var start := _world_to_cell(held_desktop_block.global_position)
+	var candidates := [start, start + Vector2i.RIGHT, start + Vector2i.LEFT, start + Vector2i.DOWN, start + Vector2i.UP]
+	for cell in candidates:
+		if cell.x < 0 or cell.y < 0 or cell.x >= MAZE_SIZE or cell.y >= MAZE_SIZE:
+			continue
+		if not maze[cell.y][cell.x] or (movable_blocks.has(cell) and movable_blocks[cell] != held_desktop_block):
+			continue
+		var center := _cell_to_world(cell) + Vector3.UP * (WALL_HEIGHT * 0.5)
+		var horizontal := Vector2(center.x - player_origin.global_position.x, center.z - player_origin.global_position.z)
+		if horizontal.length() < 1.32:
+			continue
+		var candidate := desktop_hold_transform
+		candidate.origin = center
+		if held_desktop_block.set_held_transform(candidate):
+			desktop_hold_transform = candidate
+			return true
+	return false
+
+
+func _sync_movable_block_cells() -> void:
+	var remaps: Array[Array] = []
+	var occupied: Dictionary = {}
+	for cell in movable_blocks.keys():
+		var block := movable_blocks[cell] as GrabbableWall
+		if block == null or block.held:
+			continue
+		var new_cell := _world_to_cell(block.global_position)
+		if new_cell == cell or occupied.has(new_cell):
+			occupied[cell] = block
+			continue
+		if new_cell.x < 0 or new_cell.y < 0 or new_cell.x >= MAZE_SIZE or new_cell.y >= MAZE_SIZE or not maze[new_cell.y][new_cell.x]:
+			continue
+		if movable_blocks.has(new_cell) and movable_blocks[new_cell] != block:
+			continue
+		occupied[new_cell] = block
+		remaps.append([cell, new_cell, block])
+	for remap in remaps:
+		movable_blocks.erase(remap[0])
+		movable_blocks[remap[1]] = remap[2]
+
+
+func _nearest_block(max_distance: float) -> GrabbableWall:
+	var best: GrabbableWall
 	var best_distance := max_distance
+	if desktop_camera == null:
+		return best
+	var camera_position := desktop_camera.global_position
+	var camera_forward := -desktop_camera.global_transform.basis.z
 	for block in movable_blocks.values():
-		if block is RigidBody3D and is_instance_valid(block):
-			var distance := player_origin.global_position.distance_to(block.global_position)
+		if block is GrabbableWall and is_instance_valid(block):
+			var to_block: Vector3 = block.global_position - camera_position
+			var distance: float = to_block.length()
+			var facing: float = camera_forward.dot(to_block.normalized()) if distance > 0.01 else 1.0
+			if facing < 0.25 or distance > max_distance:
+				continue
 			if distance < best_distance:
 				best = block
 				best_distance = distance

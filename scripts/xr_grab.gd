@@ -65,7 +65,11 @@ func _physics_process(delta: float) -> void:
 		return
 
 	# Move the held object to the grab point.
-	_held.global_transform = global_transform * _grab_offset
+	var candidate := global_transform * _grab_offset
+	if _held.has_method("set_held_transform"):
+		_held.call("set_held_transform", candidate)
+	else:
+		_held.global_transform = candidate
 
 	# Measure the velocity and start moving the target throw velocity to the current one.
 	# Feel free to adjust the 0.4 to see how different values feel.
@@ -85,8 +89,13 @@ func _grab() -> void:
 	_held = body
 
 	# Freeze the body kinematically. Can still push others around but cannot experience gravity or similar.
-	_held.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
-	_held.freeze = true
+	if _held.has_method("begin_hold"):
+		if not _held.call("begin_hold"):
+			_held = null
+			return
+	else:
+		_held.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+		_held.freeze = true
 
 	# We use affine inverse here as we cannot confirm the transformation doesn't have a scale.
 	# Use the regular inverse method ONLY when you know the transform is rotation+translation (no scale)
@@ -108,8 +117,12 @@ func _release() -> void:
 
 	# Set the objects velocity to throw. Also unfreeze physics
 	if is_instance_valid(_held):
-		_held.freeze = false
-		_held.linear_velocity = _velocity * throw_strength
+		if _held.has_method("drop_with_velocity"):
+			if not _held.call("drop_with_velocity", _velocity * throw_strength):
+				return
+		else:
+			_held.freeze = false
+			_held.linear_velocity = _velocity * throw_strength
 
 	# Reset members for next grab
 	_held = null
