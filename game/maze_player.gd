@@ -22,20 +22,37 @@ func setup(player_origin: XROrigin3D, player_camera: Camera3D, grid: Array, bloc
 	cell_size = spacing
 
 
+## The body is where the head is, projected to the floor. XROrigin3D is only
+## the play-area center; snap turn pivots around the head, which swings the
+## origin sideways, so collision must be tested at the head, not the origin.
+func body_position() -> Vector3:
+	var head := origin.get_node_or_null("XRCamera3D") as Node3D if origin else null
+	if head == null:
+		return origin.global_position
+	var p := head.global_position
+	p.y = origin.global_position.y
+	return p
+
+
 func try_move(offset: Vector3, ignored_block: RigidBody3D = null) -> void:
 	if origin == null:
 		return
-	var next := origin.global_position + offset
-	if is_walkable(next, ignored_block):
-		origin.global_position = next
+	var body := body_position()
+	# If the body is already somewhere invalid (turned or leaned into a wall),
+	# never lock the player in place: let any move through so they can step out.
+	if not is_walkable(body, ignored_block):
+		origin.global_position += offset
+		return
+	if is_walkable(body + offset, ignored_block):
+		origin.global_position += offset
 		return
 	# Preserve the useful corridor sliding behavior for diagonal movement.
-	var x_only := origin.global_position + Vector3(offset.x, 0.0, 0.0)
-	var z_only := origin.global_position + Vector3(0.0, 0.0, offset.z)
-	if is_walkable(x_only, ignored_block):
-		origin.global_position = x_only
-	elif is_walkable(z_only, ignored_block):
-		origin.global_position = z_only
+	var x_step := Vector3(offset.x, 0.0, 0.0)
+	var z_step := Vector3(0.0, 0.0, offset.z)
+	if is_walkable(body + x_step, ignored_block):
+		origin.global_position += x_step
+	elif is_walkable(body + z_step, ignored_block):
+		origin.global_position += z_step
 
 
 func is_walkable(world_position: Vector3, ignored_block: RigidBody3D = null) -> bool:
@@ -63,6 +80,12 @@ func _cell_is_open(cell: Vector2i, ignored_block: RigidBody3D) -> bool:
 	if maze.is_empty() or not maze[cell.y][cell.x]:
 		return false
 	if movable_blocks.has(cell) and movable_blocks[cell] != ignored_block:
+		var block = movable_blocks[cell]
+		if block is GrabbableWall and (block as GrabbableWall).is_player_passable():
+			return true
+		# Never trap the player inside a wall that became solid around them.
+		if origin != null and world_to_cell(body_position()) == cell:
+			return true
 		return false
 	return true
 

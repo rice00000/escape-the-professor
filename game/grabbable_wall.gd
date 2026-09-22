@@ -5,18 +5,35 @@ class_name GrabbableWall
 ## While held, the wall is kinematic, non-colliding, and easy to see through.
 
 const HELD_TRANSPARENCY := 0.58
+## After a drop the player can walk through the wall for this long; the
+## professor is blocked immediately.
+const PLAYER_PASS_SECONDS := 5.0
 
 var held := false
 var _saved_collision_layer := 1
 var _saved_collision_mask := 1
 var _saved_transparency: Dictionary = {}
+var _saved_material_overrides: Dictionary = {}
 var _last_valid_transform := Transform3D.IDENTITY
+var _player_pass_left := 0.0
+
+
+func _process(delta: float) -> void:
+	if _player_pass_left > 0.0:
+		_player_pass_left -= delta
+		if _player_pass_left <= 0.0 and not held:
+			_set_held_transparency(false)
+
+
+func is_player_passable() -> bool:
+	return held or _player_pass_left > 0.0
 
 
 func begin_hold() -> bool:
 	if held:
 		return false
 	held = true
+	_player_pass_left = 0.0
 	_saved_collision_layer = collision_layer
 	_saved_collision_mask = collision_mask
 	freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
@@ -58,7 +75,8 @@ func drop_with_velocity(velocity: Vector3) -> bool:
 	collision_mask = _saved_collision_mask
 	linear_velocity = velocity
 	held = false
-	_set_held_transparency(false)
+	# Stay see-through while the player can still walk through it.
+	_player_pass_left = PLAYER_PASS_SECONDS
 	return true
 
 
@@ -69,10 +87,30 @@ func _set_held_transparency(enabled: bool) -> void:
 			continue
 		if enabled:
 			_saved_transparency[mesh] = mesh.transparency
-			mesh.transparency = HELD_TRANSPARENCY
+			_saved_material_overrides[mesh] = mesh.material_override
+			# GeometryInstance3D.transparency only affects a material that has a
+			# transparent render mode. The maze material is intentionally opaque
+			# at rest, so use a per-held duplicate instead of changing the shared
+			# material used by every movable wall.
+			var source_material: Material = mesh.material_override
+			if source_material == null and mesh.mesh != null and mesh.mesh.get_surface_count() > 0:
+				source_material = mesh.mesh.surface_get_material(0)
+			if source_material is BaseMaterial3D:
+				var held_material := (source_material as BaseMaterial3D).duplicate() as BaseMaterial3D
+				held_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+				# Keep the alpha on the material as well as the instance. Some
+				# mobile render paths do not apply GeometryInstance3D.transparency
+				# consistently when the source material was created as opaque.
+				var held_color := held_material.albedo_color
+				held_color.a = 1.0 - HELD_TRANSPARENCY
+				held_material.albedo_color = held_color
+				mesh.material_override = held_material
+			mesh.transparency = 0.0
 		else:
 			mesh.transparency = float(_saved_transparency.get(mesh, 0.0))
+			mesh.material_override = _saved_material_overrides.get(mesh, null)
 	_saved_transparency.clear()
+	_saved_material_overrides.clear()
 
 
 func _overlaps_maze_wall(candidate: Transform3D) -> bool:

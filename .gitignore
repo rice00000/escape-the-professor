@@ -20,3 +20,5 @@ desktop.ini
 # OpenXR Vendors plugin
 /addons/godotopenxrvendors/
 /asset/
+
+/tools

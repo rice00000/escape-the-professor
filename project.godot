@@ -35,10 +35,11 @@ lights_and_shadows/directional_shadow/soft_shadow_filter_quality.mobile=2
 
 [xr]
 
-# The game script initializes OpenXR only when a runtime/headset is available.
-# Leaving automatic startup off lets the desktop build launch without a headset.
-openxr/enabled=false
 openxr/extensions/hand_tracking=true
 openxr/extensions/hand_tracking_unobstructed_data_source=true
 shaders/enabled=true
+; OpenXR must be enabled here or the engine never creates the OpenXR API on Quest.
+; startup_alert=false keeps the desktop build launching without a headset (script falls back to desktop mode).
+openxr/enabled=true
+openxr/startup_alert=false
 openxr/extensions/meta/passthrough=true
