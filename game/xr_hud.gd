@@ -1,11 +1,12 @@
 class_name XRHud
 extends Node3D
 
-## Owns the two XR-only HUD elements from Task 3: a wrist "watch" panel
-## (Label3D child of the left controller) and a world-space toast that
-## lazily follows the player's head. main.gd is the only script that knows
-## game state; it feeds this node status text and toast requests, and this
-## node owns the per-frame follow/fade/visibility bookkeeping.
+## The two XR-only HUD elements: a wrist "watch" panel (Label3D child of the
+## left controller) and a world-space toast that lazily follows the player's
+## head. main.gd feeds this node status text and toast requests; this node
+## owns the per-frame follow/fade/visibility bookkeeping. Requests made while
+## XR is not running are kept and shown once it is, so callers never need to
+## check the XR state themselves.
 
 const TOAST_FOLLOW_DISTANCE := 1.4
 const TOAST_HEIGHT_DROP := 0.35
@@ -106,20 +107,15 @@ func clear_toast() -> void:
 	_fallback_toast_showing = false
 
 
-func is_toast_idle() -> bool:
-	return not _toast_active
-
-
 ## Drives wrist visibility/text, the "no controller" fallback toast, the
 ## toast's countdown/expiry, its head-follow position, and its fade alpha.
-## Everything XR-only collapses to hidden when xr_running is false.
+## While xr_running is false everything is hidden and frozen in place.
 func update(delta: float, xr_running: bool) -> void:
 	if not xr_running:
 		if _wrist_label:
 			_wrist_label.visible = false
-		if _toast_active and not _toast_fading_out:
-			_toast_fading_out = true
-		_update_toast_fade(delta)
+		if _toast_label:
+			_toast_label.visible = false
 		return
 	_update_wrist(xr_running)
 	_update_toast_timers(delta)

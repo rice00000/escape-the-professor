@@ -2,15 +2,21 @@ extends Node3D
 class_name MazeWorld
 
 ## Owns one generated round's grid, geometry, movable walls, and exit.
+## Calling build() again replaces the previous round in place.
 
 const MAZE_SIZE := 15
 const CELL_SIZE := 1.65
 const WALL_HEIGHT := 2.45
+const EXIT_CELL := Vector2i(MAZE_SIZE - 2, MAZE_SIZE - 2)
+const START_CELL := Vector2i(1, 1)
 
 var maze: Array = []
-var movable_blocks: Dictionary = {}
-var block_cells: Array[Vector2i] = []
+## The movable walls of this round. Their grid cell is derived from their
+## world position on demand (see block_at()), so nothing goes stale when a
+## wall is carried, dropped, or destroyed.
+var blocks: Array[GrabbableWall] = []
 var exit_node: Node3D
+var exit_pulse: ExitPulse
 var _player_origin: Node3D
 var _materials: Dictionary
 
@@ -19,8 +25,7 @@ func build(seed_value: int, player_origin: Node3D, materials: Dictionary) -> voi
 	_player_origin = player_origin
 	_materials = materials
 	maze.clear()
-	movable_blocks.clear()
-	block_cells.clear()
+	blocks.clear()
 	for child in get_children():
 		child.queue_free()
 	_generate(seed_value)
@@ -34,8 +39,8 @@ func _generate(seed_value: int) -> void:
 		for col in MAZE_SIZE:
 			line.append(false)
 		maze.append(line)
-	var stack: Array[Vector2i] = [Vector2i(1, 1)]
-	maze[1][1] = true
+	var stack: Array[Vector2i] = [START_CELL]
+	maze[START_CELL.y][START_CELL.x] = true
 	while not stack.is_empty():
 		var current: Vector2i = stack.back()
 		var options: Array[Vector2i] = []
@@ -78,15 +83,16 @@ func _build_geometry() -> void:
 			wall.add_to_group("maze_wall")
 			add_child(wall)
 			_add_box(wall, Vector3(CELL_SIZE, WALL_HEIGHT, CELL_SIZE), cell_to_world(Vector2i(col, row)) + Vector3.UP * WALL_HEIGHT * 0.5, _materials.wall, false)
-	var route := find_path(Vector2i(1, 1), Vector2i(MAZE_SIZE - 2, MAZE_SIZE - 2), false)
+	var route := find_path(START_CELL, EXIT_CELL, false)
 	for index in [max(2, int(route.size() / 3.0)), max(3, int(route.size() * 2.0 / 3.0))]:
-		if index >= 1 and index < route.size() - 1 and not movable_blocks.has(route[index]):
+		if index >= 1 and index < route.size() - 1 and block_at(route[index]) == null:
 			_create_movable_block(route[index])
-	var exit_cell := Vector2i(MAZE_SIZE - 2, MAZE_SIZE - 2)
 	exit_node = Node3D.new()
 	exit_node.name = "Exit"
-	exit_node.position = cell_to_world(exit_cell) + Vector3.UP * 0.08
+	exit_node.position = cell_to_world(EXIT_CELL) + Vector3.UP * 0.08
 	add_child(exit_node)
+	exit_pulse = ExitPulse.new()
+	exit_node.add_child(exit_pulse)
 	var ring := MeshInstance3D.new()
 	var ring_mesh := CylinderMesh.new()
 	ring_mesh.top_radius = 0.5
@@ -122,8 +128,7 @@ func _create_movable_block(cell: Vector2i) -> void:
 	block.set_meta("player_origin", _player_origin)
 	add_child(block)
 	_add_box(block, Vector3(CELL_SIZE * 0.92, WALL_HEIGHT * 0.92, CELL_SIZE * 0.92), Vector3.ZERO, _materials.movable, true)
-	movable_blocks[cell] = block
-	block_cells.append(cell)
+	blocks.append(block)
 
 
 func _add_box(parent: Node, size: Vector3, at: Vector3, material: Material, dynamic: bool) -> void:
@@ -189,8 +194,7 @@ func _add_ceiling_and_lights() -> void:
 
 
 func choose_professor_cell(start_cell: Vector2i) -> Vector2i:
-	var exit_cell := Vector2i(MAZE_SIZE - 2, MAZE_SIZE - 2)
-	var player_exit_path := find_path(start_cell, exit_cell, false)
+	var player_exit_path := find_path(start_cell, EXIT_CELL, false)
 	var candidates: Array[Vector2i] = []
 	for cell in [Vector2i(3, 1), Vector2i(1, 3), Vector2i(4, 1), Vector2i(1, 4), Vector2i(5, 1), Vector2i(1, 5)]:
 		if is_open(cell) and not player_exit_path.has(cell) and has_grid_line_of_sight(start_cell, cell):
@@ -227,7 +231,7 @@ func find_path(from: Vector2i, to: Vector2i, avoid_blocks: bool) -> Array[Vector
 			var next: Vector2i = current + direction
 			if not is_open(next) or came_from.has(next):
 				continue
-			if avoid_blocks and movable_blocks.has(next) and next != to:
+			if avoid_blocks and next != to and block_at(next) != null:
 				continue
 			came_from[next] = current
 			queue.append(next)
@@ -242,13 +246,38 @@ func find_path(from: Vector2i, to: Vector2i, avoid_blocks: bool) -> Array[Vector
 	return result
 
 
+## True when the cell is inside the grid and not a fixed wall. Movable
+## blocks are not considered; see block_at() / is_free().
 func is_open(cell: Vector2i) -> bool:
 	return cell.x >= 0 and cell.y >= 0 and cell.x < MAZE_SIZE and cell.y < MAZE_SIZE and not maze.is_empty() and maze[cell.y][cell.x]
 
 
-func cell_to_world(cell: Vector2i) -> Vector3:
+## The resting movable wall occupying `cell`, or null. Held walls are not
+## counted: they are off the grid until dropped.
+func block_at(cell: Vector2i) -> GrabbableWall:
+	for block in blocks:
+		if is_instance_valid(block) and not block.held and world_to_cell(block.global_position) == cell:
+			return block
+	return null
+
+
+## Open and not occupied by a resting wall (other than `ignore`).
+func is_free(cell: Vector2i, ignore: GrabbableWall = null) -> bool:
+	if not is_open(cell):
+		return false
+	var occupant := block_at(cell)
+	return occupant == null or occupant == ignore
+
+
+func remove_block(block: GrabbableWall) -> void:
+	blocks.erase(block)
+	if is_instance_valid(block):
+		block.queue_free()
+
+
+static func cell_to_world(cell: Vector2i) -> Vector3:
 	return Vector3((cell.x - (MAZE_SIZE - 1) * 0.5) * CELL_SIZE, 0.0, (cell.y - (MAZE_SIZE - 1) * 0.5) * CELL_SIZE)
 
 
-func world_to_cell(world_position: Vector3) -> Vector2i:
+static func world_to_cell(world_position: Vector3) -> Vector2i:
 	return Vector2i(roundi(world_position.x / CELL_SIZE + (MAZE_SIZE - 1) * 0.5), roundi(world_position.z / CELL_SIZE + (MAZE_SIZE - 1) * 0.5))

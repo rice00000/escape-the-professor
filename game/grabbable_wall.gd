@@ -8,6 +8,8 @@ const HELD_TRANSPARENCY := 0.58
 ## After a drop the player can walk through the wall for this long; the
 ## professor is blocked immediately.
 const PLAYER_PASS_SECONDS := 5.0
+## A wall may not be dropped closer than this (horizontally) to the player.
+const MIN_DROP_DISTANCE := 1.32
 
 var held := false
 var _saved_collision_layer := 1
@@ -68,7 +70,7 @@ func drop_with_velocity(velocity: Vector3) -> bool:
 	var player := get_meta("player_origin", null) as Node3D
 	if player != null:
 		var horizontal := Vector2(global_position.x - player.global_position.x, global_position.z - player.global_position.z)
-		if horizontal.length() < 1.32:
+		if horizontal.length() < MIN_DROP_DISTANCE:
 			return false
 	freeze = false
 	collision_layer = _saved_collision_layer

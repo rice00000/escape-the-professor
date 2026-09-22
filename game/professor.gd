@@ -9,7 +9,7 @@ const BREAK_TIME := 2.5
 const GRACE_TIME := 2.0
 
 var world: MazeWorld
-var player_origin: Node3D
+var player: MazePlayer
 var _material: Material
 var _path: Array[Vector2i] = []
 var _path_timer := 0.0
@@ -23,9 +23,9 @@ const FACE_HEIGHT := 0.5
 const FACE_OFFSET := 0.42
 
 
-func setup(maze_world: MazeWorld, player: Node3D, professor_material: Material) -> void:
+func setup(maze_world: MazeWorld, maze_player: MazePlayer, professor_material: Material) -> void:
 	world = maze_world
-	player_origin = player
+	player = maze_player
 	_material = professor_material
 	if get_node_or_null("Body") == null:
 		_build_visuals()
@@ -34,7 +34,7 @@ func setup(maze_world: MazeWorld, player: Node3D, professor_material: Material) 
 
 
 func reset() -> void:
-	if world == null or player_origin == null:
+	if world == null or player == null:
 		return
 	_path.clear()
 	_path_timer = 0.0
@@ -42,12 +42,12 @@ func reset() -> void:
 	_grace_timer = GRACE_TIME
 	_break_cell = Vector2i(-1, -1)
 	_break_timer = 0.0
-	var cell := world.choose_professor_cell(world.world_to_cell(_target_position()))
-	global_position = world.cell_to_world(cell) + Vector3.UP * 1.0
+	var cell := world.choose_professor_cell(MazeWorld.world_to_cell(_target_position()))
+	global_position = MazeWorld.cell_to_world(cell) + Vector3.UP * 1.0
 
 
 func tick(delta: float) -> void:
-	if world == null or player_origin == null:
+	if world == null or player == null:
 		return
 	_place_name_tag()
 	if _grace_timer > 0.0:
@@ -64,18 +64,17 @@ func tick(delta: float) -> void:
 	_path_timer -= delta
 	if _path_timer <= 0.0:
 		_path_timer = 0.22
-		var from := world.world_to_cell(global_position)
-		var to := world.world_to_cell(_target_position())
+		var from := MazeWorld.world_to_cell(global_position)
+		var to := MazeWorld.world_to_cell(_target_position())
 		_path = world.find_path(from, to, true)
 		if _path.size() < 2:
-			var unblocked := world.find_path(from, to, false)
-			for cell in unblocked:
-				if world.movable_blocks.has(cell):
+			for cell in world.find_path(from, to, false):
+				if world.block_at(cell) != null:
 					_break_cell = cell
 					_break_timer = BREAK_TIME
 					break
 	if _path.size() >= 2:
-		var next_position := world.cell_to_world(_path[1]) + Vector3.UP * 1.0
+		var next_position := MazeWorld.cell_to_world(_path[1]) + Vector3.UP * 1.0
 		global_position = global_position.move_toward(next_position, SPEED * delta)
 		if _audio and _footstep_timer <= 0.0:
 			_audio.play()
@@ -96,12 +95,7 @@ func _place_name_tag() -> void:
 
 ## Chase the player's head (floor-projected), not the XR play-area origin.
 func _target_position() -> Vector3:
-	var head := player_origin.get_node_or_null("XRCamera3D") as Node3D
-	if head == null:
-		return player_origin.global_position
-	var p := head.global_position
-	p.y = player_origin.global_position.y
-	return p
+	return player.body_position()
 
 
 func is_breaking() -> bool:
@@ -113,13 +107,9 @@ func break_time_left() -> float:
 
 
 func _destroy_block(cell: Vector2i) -> void:
-	if not world.movable_blocks.has(cell):
-		return
-	var block := world.movable_blocks[cell] as RigidBody3D
-	world.movable_blocks.erase(cell)
-	world.block_cells.erase(cell)
-	if is_instance_valid(block):
-		block.queue_free()
+	var block := world.block_at(cell)
+	if block != null:
+		world.remove_block(block)
 
 
 func _build_visuals() -> void:
@@ -163,29 +153,8 @@ func _build_visuals() -> void:
 func _create_audio() -> void:
 	_audio = AudioStreamPlayer3D.new()
 	_audio.name = "Footsteps"
-	_audio.stream = _tone_stream(92.0, 0.18, 0.20, 0.1)
+	_audio.stream = Tone.make(92.0, 0.18, 0.20, 0.1)
 	_audio.max_distance = MazeWorld.MAZE_SIZE * MazeWorld.CELL_SIZE
 	_audio.unit_size = 1.0
 	add_child(_audio)
 
-
-func _tone_stream(frequency: float, duration: float, volume: float, second_frequency: float) -> AudioStreamWAV:
-	var rate := 22050
-	var count := int(duration * rate)
-	var bytes := PackedByteArray()
-	bytes.resize(count * 2)
-	for i in count:
-		var time := float(i) / rate
-		var envelope := minf(1.0, time * 40.0) * minf(1.0, (duration - time) * 16.0)
-		var value := sin(TAU * frequency * time)
-		if second_frequency > 0.0:
-			value = (value + sin(TAU * second_frequency * time) * 0.35) / 1.35
-		var sample := int(clampf(value * envelope * volume, -1.0, 1.0) * 32767.0)
-		bytes[i * 2] = sample & 255
-		bytes[i * 2 + 1] = (sample >> 8) & 255
-	var stream := AudioStreamWAV.new()
-	stream.format = AudioStreamWAV.FORMAT_16_BITS
-	stream.mix_rate = rate
-	stream.stereo = false
-	stream.data = bytes
-	return stream
