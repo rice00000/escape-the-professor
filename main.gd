@@ -7,12 +7,13 @@ extends Node3D
 var xr_interface: OpenXRInterface
 @export var target_refresh_rate := 72.0
 
-const MAZE_SIZE := 11
+const MAZE_SIZE := 15
 const CELL_SIZE := 1.65
 const WALL_HEIGHT := 2.45
 const PLAYER_HEIGHT := 1.6
-const PROFESSOR_SPEED := 1.45
+const PROFESSOR_SPEED := 1.6
 const BREAK_TIME := 2.5
+const PROFESSOR_GRACE_TIME := 2.0
 
 var maze: Array = []
 var movable_blocks: Dictionary = {}
@@ -25,6 +26,7 @@ var exit_audio: AudioStreamPlayer3D
 var professor_audio: AudioStreamPlayer3D
 var pulse_timer := 0.0
 var professor_timer := 0.0
+var professor_grace_timer := 0.0
 var path_timer := 0.0
 var break_cell := Vector2i(-1, -1)
 var break_timer := 0.0
@@ -45,6 +47,9 @@ var wall_material: StandardMaterial3D
 var movable_material: StandardMaterial3D
 var professor_material: StandardMaterial3D
 var exit_material: StandardMaterial3D
+var ceiling_material: StandardMaterial3D
+var fluorescent_material: StandardMaterial3D
+var wood_seam_material: StandardMaterial3D
 
 
 func _ready() -> void:
@@ -102,11 +107,14 @@ func _hide_template_demo() -> void:
 
 
 func _setup_materials() -> void:
-	floor_material = _material(Color("#172338"), 0.75)
-	wall_material = _material(Color("#3e5871"), 0.42)
+	floor_material = _material(Color("#765035"), 0.82)
+	wood_seam_material = _material(Color("#3d281d"), 0.9)
+	wall_material = _material(Color("#756b59"), 0.68)
 	movable_material = _material(Color("#b76c39"), 0.3)
 	professor_material = _material(Color("#a62936"), 0.28)
 	exit_material = _material(Color("#54e4be"), 0.08, true)
+	ceiling_material = _material(Color("#cbc3ad"), 0.88)
+	fluorescent_material = _material(Color("#d9f6ff"), 0.24, true)
 
 
 func _material(color: Color, roughness: float, emission := false) -> StandardMaterial3D:
@@ -158,6 +166,7 @@ func _start_round() -> void:
 	break_cell = Vector2i(-1, -1)
 	break_timer = 0.0
 	professor_path.clear()
+	professor_grace_timer = PROFESSOR_GRACE_TIME
 	if maze_root and is_instance_valid(maze_root):
 		maze_root.queue_free()
 	maze_root = Node3D.new()
@@ -194,6 +203,23 @@ func _generate_maze() -> void:
 			maze[between.y][between.x] = true
 			maze[next.y][next.x] = true
 			stack.append(next)
+	# Make the starting pocket a readable two-way junction. This gives the
+	# player an immediate choice and leaves a side branch for the professor.
+	maze[1][2] = true
+	maze[2][1] = true
+	# A few opened wall cells turn the perfect maze into a maze with loops and
+	# alternate escapes. Keep the openings sparse so the corridors still feel
+	# tense and legible.
+	for row in range(1, MAZE_SIZE - 1):
+		for col in range(1, MAZE_SIZE - 1):
+			if maze[row][col]:
+				continue
+			var horizontal_wall := row % 2 == 1 and col % 2 == 0
+			var vertical_wall := row % 2 == 0 and col % 2 == 1
+			if horizontal_wall and maze[row][col - 1] and maze[row][col + 1] and randf() < 0.24:
+				maze[row][col] = true
+			elif vertical_wall and maze[row - 1][col] and maze[row + 1][col] and randf() < 0.24:
+				maze[row][col] = true
 	maze[MAZE_SIZE - 2][MAZE_SIZE - 2] = true
 
 
@@ -202,6 +228,8 @@ func _build_maze() -> void:
 	floor_body.name = "MazeFloor"
 	maze_root.add_child(floor_body)
 	_add_box(floor_body, Vector3(MAZE_SIZE * CELL_SIZE, 0.1, MAZE_SIZE * CELL_SIZE), Vector3.ZERO, floor_material, false)
+	_add_wood_floor_detail()
+	_add_ceiling_and_lights()
 	for row in MAZE_SIZE:
 		for col in MAZE_SIZE:
 			if not maze[row][col]:
@@ -278,11 +306,65 @@ func _add_box(parent: Node, size: Vector3, at: Vector3, material: Material, dyna
 		(parent as RigidBody3D).collision_mask = 1
 
 
+func _add_wood_floor_detail() -> void:
+	# Thin seams sell the plank floor while keeping the walkable surface flat.
+	for index in range(-MAZE_SIZE / 2, MAZE_SIZE / 2 + 1):
+		var seam := MeshInstance3D.new()
+		var seam_mesh := BoxMesh.new()
+		seam_mesh.size = Vector3(MAZE_SIZE * CELL_SIZE, 0.012, 0.022)
+		seam_mesh.material = wood_seam_material
+		seam.mesh = seam_mesh
+		seam.position = Vector3(0.0, 0.058, index * CELL_SIZE)
+		maze_root.add_child(seam)
+	for index in range(-MAZE_SIZE / 2, MAZE_SIZE / 2 + 1):
+		var seam := MeshInstance3D.new()
+		var seam_mesh := BoxMesh.new()
+		seam_mesh.size = Vector3(0.022, 0.013, MAZE_SIZE * CELL_SIZE)
+		seam_mesh.material = wood_seam_material
+		seam.mesh = seam_mesh
+		seam.position = Vector3(index * CELL_SIZE, 0.059, 0.0)
+		maze_root.add_child(seam)
+
+
+func _add_ceiling_and_lights() -> void:
+	var ceiling_body := StaticBody3D.new()
+	ceiling_body.name = "SchoolCeiling"
+	maze_root.add_child(ceiling_body)
+	var map_span := MAZE_SIZE * CELL_SIZE + CELL_SIZE * 0.8
+	_add_box(ceiling_body, Vector3(map_span, 0.14, map_span), Vector3(0.0, WALL_HEIGHT + 0.68, 0.0), ceiling_material, false)
+	# Repeated cool fixtures create the flat, institutional backrooms feeling.
+	var fixture_cells := [-5, 0, 5]
+	for row in fixture_cells:
+		for col in fixture_cells:
+			var fixture := MeshInstance3D.new()
+			var fixture_mesh := BoxMesh.new()
+			fixture_mesh.size = Vector3(CELL_SIZE * 1.25, 0.055, CELL_SIZE * 0.28)
+			fixture_mesh.material = fluorescent_material
+			fixture.mesh = fixture_mesh
+			fixture.position = Vector3(col * CELL_SIZE, WALL_HEIGHT + 0.58, row * CELL_SIZE)
+			maze_root.add_child(fixture)
+			var light := OmniLight3D.new()
+			light.light_color = Color("#d8efff")
+			light.light_energy = 2.1
+			light.omni_range = CELL_SIZE * 3.5
+			light.shadow_enabled = false
+			light.position = fixture.position + Vector3.DOWN * 0.16
+			maze_root.add_child(light)
+
+
 func _place_player_and_professor() -> void:
+	var start_cell := Vector2i(1, 1)
 	if player_origin:
-		player_origin.global_position = _cell_to_world(Vector2i(1, 1))
+		player_origin.global_position = _cell_to_world(start_cell)
 		player_origin.rotation = Vector3.ZERO
-	var professor_cell := Vector2i(MAZE_SIZE - 2, 1)
+	var professor_cell := _choose_professor_cell(start_cell)
+	# Keep the origin level; tilting the origin would also tilt the desktop
+	# camera and XR headset. The professor remains comfortably inside the view.
+	var professor_target := _cell_to_world(professor_cell)
+	if player_origin:
+		# Face the professor down the open starting branch so desktop and XR
+		# players see the threat immediately after a new round starts.
+		player_origin.look_at(professor_target, Vector3.UP)
 	professor = Node3D.new()
 	professor.name = "Professor"
 	professor.position = _cell_to_world(professor_cell) + Vector3.UP * 1.0
@@ -309,6 +391,40 @@ func _place_player_and_professor() -> void:
 	professor_light.light_energy = 1.2
 	professor_light.omni_range = 3.0
 	professor.add_child(professor_light)
+
+
+func _choose_professor_cell(start_cell: Vector2i) -> Vector2i:
+	var exit_cell := Vector2i(MAZE_SIZE - 2, MAZE_SIZE - 2)
+	var player_exit_path := _find_path(start_cell, exit_cell, false)
+	var candidates: Array[Vector2i] = []
+	# Cardinal cells keep line of sight unambiguous in the narrow corridors.
+	for cell in [Vector2i(3, 1), Vector2i(1, 3), Vector2i(4, 1), Vector2i(1, 4), Vector2i(5, 1), Vector2i(1, 5)]:
+		if cell.x < 0 or cell.y < 0 or cell.x >= MAZE_SIZE or cell.y >= MAZE_SIZE:
+			continue
+		if not maze[cell.y][cell.x] or player_exit_path.has(cell):
+			continue
+		if _has_grid_line_of_sight(start_cell, cell):
+			candidates.append(cell)
+	if not candidates.is_empty():
+		return candidates[randi_range(0, candidates.size() - 1)]
+	# The generated starting pocket should make the branch candidates above
+	# available. Keep a safe fallback for unusual future generator changes.
+	for cell in [Vector2i(2, 1), Vector2i(1, 2)]:
+		if maze[cell.y][cell.x] and not player_exit_path.has(cell):
+			return cell
+	return Vector2i(MAZE_SIZE - 2, 1)
+
+
+func _has_grid_line_of_sight(from: Vector2i, to: Vector2i) -> bool:
+	if from.x != to.x and from.y != to.y:
+		return false
+	var step := Vector2i(signi(to.x - from.x), signi(to.y - from.y))
+	var cursor := from + step
+	while cursor != to:
+		if not maze[cursor.y][cursor.x]:
+			return false
+		cursor += step
+	return maze[to.y][to.x]
 
 
 func _create_audio() -> void:
@@ -394,14 +510,20 @@ func _handle_player_movement(delta: float) -> void:
 	input = input.limit_length(1.0)
 	var direction: Vector3
 	if not _xr_is_running():
-		var basis := player_origin.global_transform.basis
-		direction = basis.x * input.x - basis.z * input.y
+		direction = _desktop_movement_direction(input)
 	else:
 		var camera := get_node_or_null("XROrigin3D/XRCamera3D") as Node3D
 		var basis := camera.global_transform.basis if camera else player_origin.global_transform.basis
 		direction = basis.x * input.x - basis.z * input.y
 	direction.y = 0.0
 	if direction.length() > 0.01: _try_move_player(direction.normalized() * 2.35 * delta)
+
+
+func _desktop_movement_direction(input: Vector2) -> Vector3:
+	var basis := player_origin.global_transform.basis
+	# Input.get_vector uses negative Y for W. Multiplying by +Z makes W
+	# follow Godot's forward (-Z) direction instead of walking backward.
+	return basis.x * input.x + basis.z * input.y
 
 
 func _try_move_player(offset: Vector3) -> void:
@@ -453,6 +575,9 @@ func _nearest_block(max_distance: float) -> RigidBody3D:
 
 func _update_professor(delta: float) -> void:
 	if professor == null or player_origin == null: return
+	if professor_grace_timer > 0.0:
+		professor_grace_timer -= delta
+		return
 	professor_timer -= delta
 	path_timer -= delta
 	if break_timer > 0.0:
