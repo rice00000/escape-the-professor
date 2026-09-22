@@ -12,6 +12,7 @@ const PLAYER_PASS_SECONDS := 5.0
 const MIN_DROP_DISTANCE := 1.32
 
 var held := false
+var _round_locked := false
 var _saved_collision_layer := 1
 var _saved_collision_mask := 1
 var _saved_transparency: Dictionary = {}
@@ -32,7 +33,7 @@ func is_player_passable() -> bool:
 
 
 func begin_hold() -> bool:
-	if held:
+	if held or _round_locked:
 		return false
 	held = true
 	_player_pass_left = 0.0
@@ -49,7 +50,7 @@ func begin_hold() -> bool:
 
 
 func set_held_transform(candidate: Transform3D) -> bool:
-	if not held:
+	if not held or _round_locked:
 		return false
 	if not _overlaps_maze_wall(candidate):
 		global_transform = candidate
@@ -59,6 +60,8 @@ func set_held_transform(candidate: Transform3D) -> bool:
 
 
 func drop_with_velocity(velocity: Vector3) -> bool:
+	if _round_locked:
+		return false
 	if not held:
 		return true
 	# Keep the last known clear transform if a tracked hand/controller ended
@@ -80,6 +83,15 @@ func drop_with_velocity(velocity: Vector3) -> bool:
 	# Stay see-through while the player can still walk through it.
 	_player_pass_left = PLAYER_PASS_SECONDS
 	return true
+
+
+## Freeze this wall at the end of a round. The lock also prevents controller
+## and hand grabbers (which keep receiving XR input) from moving it afterward.
+func lock_for_round_end() -> void:
+	_round_locked = true
+	linear_velocity = Vector3.ZERO
+	angular_velocity = Vector3.ZERO
+	freeze = true
 
 
 func _set_held_transparency(enabled: bool) -> void:

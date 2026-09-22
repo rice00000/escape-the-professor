@@ -100,6 +100,7 @@ func _start_round() -> void:
 	round_time = 0.0
 	_sticky_toast = ""
 	desktop.release()
+	desktop_hud.clear_result()
 	world.build(randi(), _origin, _materials)
 	_origin.global_position = MazeWorld.cell_to_world(MazeWorld.START_CELL)
 	_origin.rotation = Vector3.ZERO
@@ -129,10 +130,25 @@ func _play_frame(delta: float, xr_running: bool) -> void:
 	var exit_distance := body.distance_to(world.exit_node.global_position)
 	world.exit_pulse.tick(delta, exit_distance)
 	if exit_distance < WIN_DISTANCE:
-		state = State.WON
-		world.exit_pulse.play()
+		_finish_round(State.WON)
 	elif _floor_distance(body, professor.global_position) < CAUGHT_DISTANCE:
-		state = State.LOST
+		_finish_round(State.LOST)
+
+
+## Enter an end state once, leaving this node processing so the HUD and
+## restart controls still work while every gameplay object is frozen.
+func _finish_round(result: State) -> void:
+	if state != State.PLAYING:
+		return
+	state = result
+	desktop.release()
+	for block in world.blocks:
+		if is_instance_valid(block):
+			block.lock_for_round_end()
+	world.exit_pulse.stop()
+	if result == State.WON:
+		world.exit_pulse.play()
+	desktop_hud.show_result(_status_text(false), result == State.WON)
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
