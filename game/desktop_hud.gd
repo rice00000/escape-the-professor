@@ -6,6 +6,7 @@ extends CanvasLayer
 
 var _info: Label
 var _status: Label
+var _threat_overlay: ColorRect
 var _result_overlay: ColorRect
 var _result_label: Label
 
@@ -14,6 +15,12 @@ func _init() -> void:
 	name = "GameHUD"
 	_info = _label(Vector2(24, 20), 20, Color("#e7f2ff"))
 	_status = _label(Vector2(24, 120), 28, Color("#71f3d0"))
+	_threat_overlay = ColorRect.new()
+	_threat_overlay.name = "ThreatWarningOverlay"
+	_threat_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_threat_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_threat_overlay.visible = false
+	add_child(_threat_overlay)
 	_result_overlay = ColorRect.new()
 	_result_overlay.name = "ResultOverlay"
 	_result_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -34,6 +41,19 @@ func _init() -> void:
 func set_text(info: String, status: String) -> void:
 	_info.text = info
 	_status.text = status
+
+
+func set_threat_warning(strength: float, flash: float) -> void:
+	if strength <= 0.0:
+		_threat_overlay.visible = false
+		return
+	var red := Color("#ff173d")
+	var blue := Color("#315cff")
+	var color := red.lerp(blue, flash)
+	# Keep the warning readable without obscuring the maze.
+	color.a = strength * lerpf(0.03, 0.16, absf(flash - 0.5) * 2.0)
+	_threat_overlay.color = color
+	_threat_overlay.visible = true
 
 
 func show_result(text: String, won: bool) -> void:

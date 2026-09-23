@@ -9,6 +9,8 @@ const BREAK_TIME := 2.5
 const GRACE_TIME := 2.0
 const WALKING_SOUND_PATH := "res://assets/audio/professor_walking.ogg"
 const WALKING_SOUND_RADIUS := 6.0
+const THREAT_RED := Color("#ff173d")
+const THREAT_BLUE := Color("#315cff")
 
 var world: MazeWorld
 var player: MazePlayer
@@ -113,6 +115,22 @@ func break_time_left() -> float:
 ## win/loss, so its looping walking sound must be stopped explicitly.
 func stop_walking_audio() -> void:
 	_set_walking_audio(false)
+
+
+## Pulses the existing world-space light so XR players receive the same close
+## warning as the desktop screen overlay.
+func set_threat_warning(strength: float, flash: float) -> void:
+	var light := get_node_or_null("ThreatLight") as OmniLight3D
+	if light == null:
+		return
+	if strength <= 0.0:
+		light.light_color = THREAT_RED
+		light.light_energy = 1.2
+		light.omni_range = 3.0
+		return
+	light.light_color = THREAT_RED.lerp(THREAT_BLUE, flash)
+	light.light_energy = 1.2 + strength * lerpf(1.8, 5.0, absf(flash - 0.5) * 2.0)
+	light.omni_range = 3.0 + strength * 3.0
 
 
 func _destroy_block(cell: Vector2i) -> void:

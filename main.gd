@@ -15,6 +15,9 @@ enum State { PLAYING, WON, LOST }
 
 const WIN_DISTANCE := 0.75
 const CAUGHT_DISTANCE := 0.95
+const THREAT_WARNING_DISTANCE := 4.5
+const THREAT_FLASH_SPEED := 1.6
+const LOSE_SOUND_PATH := "res://assets/audio/you_lose_fast.mp3"
 const CONTROLS_HINT_SECONDS := 7.0
 const CONTROLS_HINT := "Left stick: move  ·  Right stick: turn\nGrip: grab wall  ·  Hold A: restart"
 
@@ -32,9 +35,11 @@ var xr_move: XRLocomotion
 var xr_restart: XRRestartInput
 var desktop_hud: DesktopHud
 var xr_hud: XRHud
+var lose_audio: AudioStreamPlayer
 
 var state := State.PLAYING
 var round_time := 0.0
+var _threat_phase := 0.0
 var _materials := Palette.build()
 ## The sticky (no timeout) XR toast currently requested, "" for none.
 var _sticky_toast := ""
@@ -69,6 +74,9 @@ func _ready() -> void:
 	xr_hud = XRHud.new()
 	_add(xr_hud, "XRHud")
 	xr_hud.setup(_left_controller, _xr_camera)
+	lose_audio = AudioStreamPlayer.new()
+	lose_audio.stream = AudioStreamMP3.load_from_file(LOSE_SOUND_PATH)
+	_add(lose_audio, "LoseSound")
 
 	_start_round()
 
@@ -98,6 +106,8 @@ func _hide_template_demo() -> void:
 func _start_round() -> void:
 	state = State.PLAYING
 	round_time = 0.0
+	lose_audio.stop()
+	_threat_phase = 0.0
 	_sticky_toast = ""
 	desktop.release()
 	desktop_hud.clear_result()
@@ -149,6 +159,8 @@ func _finish_round(result: State) -> void:
 	world.exit_pulse.stop()
 	if result == State.WON:
 		world.exit_pulse.play()
+	else:
+		lose_audio.play()
 	desktop_hud.show_result(_status_text(false), result == State.WON)
 
 
@@ -160,6 +172,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 # --- HUD -------------------------------------------------------------------
 
 func _update_hud(delta: float, xr_running: bool) -> void:
+	_update_threat_warning(delta)
 	var time_text := "%02d" % int(round_time)
 	var exit_text := "%.1f" % _exit_distance()
 	var breaking := _breaking_text()
@@ -171,6 +184,26 @@ func _update_hud(delta: float, xr_running: bool) -> void:
 	xr_hud.set_status_text(time_text + "s", exit_text + "m")
 	_set_sticky_toast(_toast_text(xr_running))
 	xr_hud.update(delta, xr_running)
+
+
+## A close professor creates a siren-like red/blue pulse. Desktop gets a
+## translucent screen flash; XR sees the professor's world-space threat light.
+func _update_threat_warning(delta: float) -> void:
+	var strength := 0.0
+	if state == State.PLAYING:
+		var distance := _floor_distance(player.body_position(), professor.global_position)
+		strength = clampf(
+			(THREAT_WARNING_DISTANCE - distance) / (THREAT_WARNING_DISTANCE - CAUGHT_DISTANCE),
+			0.0,
+			1.0
+		)
+	if strength > 0.0:
+		_threat_phase = fmod(_threat_phase + delta * TAU * THREAT_FLASH_SPEED, TAU)
+	else:
+		_threat_phase = 0.0
+	var flash := (sin(_threat_phase) + 1.0) * 0.5
+	desktop_hud.set_threat_warning(strength, flash)
+	professor.set_threat_warning(strength, flash)
 
 
 ## The one-line round status shown on the desktop HUD and, once the round is
