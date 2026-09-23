@@ -104,7 +104,7 @@ func _start_round() -> void:
 	world.build(randi(), _origin, _materials)
 	_origin.global_position = MazeWorld.cell_to_world(MazeWorld.START_CELL)
 	_origin.rotation = Vector3.ZERO
-	professor.setup(world, player, _materials.professor)
+	professor.setup(world, player)
 	professor.reset()
 	xr_hud.show_toast(CONTROLS_HINT, CONTROLS_HINT_SECONDS)
 

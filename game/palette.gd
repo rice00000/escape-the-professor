@@ -1,7 +1,7 @@
 class_name Palette
 
-## The game's material set, keyed by the names MazeWorld.build() and the
-## professor expect. Built once at startup and shared across rounds.
+## The game's material set, keyed by the names MazeWorld.build() expects.
+## Built once at startup and shared across rounds.
 
 
 static func build() -> Dictionary:
@@ -12,7 +12,6 @@ static func build() -> Dictionary:
 		# GrabbableWall makes a transparent duplicate of this while a block is
 		# held, so resting blocks stay solid and held blocks render through.
 		"movable": _material(Color("#b76c39"), 0.3),
-		"professor": _material(Color("#a62936"), 0.28),
 		"exit": _material(Color("#54e4be"), 0.08, true),
 		"ceiling": _material(Color("#cbc3ad"), 0.88),
 		"fluorescent": _material(Color("#d9f6ff"), 0.24, true),
