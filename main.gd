@@ -145,6 +145,7 @@ func _finish_round(result: State) -> void:
 	for block in world.blocks:
 		if is_instance_valid(block):
 			block.lock_for_round_end()
+	professor.stop_walking_audio()
 	world.exit_pulse.stop()
 	if result == State.WON:
 		world.exit_pulse.play()
@@ -180,7 +181,7 @@ func _status_text(xr_running: bool) -> String:
 		State.WON:
 			return "ESCAPED! %s for a new maze" % restart
 		State.LOST:
-			return "CAUGHT BY THE PROFESSOR! %s to retry" % restart
+			return "YOU LOSE! GO BACK TO CLASS — %s to retry" % restart
 	return "Find the green EXIT. Move a wall if you need to."
 
 

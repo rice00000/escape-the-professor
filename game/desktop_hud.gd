@@ -38,6 +38,7 @@ func set_text(info: String, status: String) -> void:
 
 func show_result(text: String, won: bool) -> void:
 	_result_label.text = text.replace("! ", "!\n\n")
+	_result_label.add_theme_font_size_override("font_size", 42 if won else 54)
 	_result_overlay.color = Color(0.015, 0.09, 0.075, 0.82) if won else Color(0.12, 0.015, 0.025, 0.84)
 	_result_overlay.visible = true
 
