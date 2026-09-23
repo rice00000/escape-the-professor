@@ -7,13 +7,16 @@ class_name ProfessorActor
 const SPEED := 1.6
 const BREAK_TIME := 2.5
 const GRACE_TIME := 2.0
+const WALKING_SOUND_PATH := "res://assets/audio/professor_walking.ogg"
+const WALKING_SOUND_RADIUS := 6.0
+const THREAT_RED := Color("#ff173d")
+const THREAT_BLUE := Color("#315cff")
 
 var world: MazeWorld
 var player: MazePlayer
 var _material: Material
 var _path: Array[Vector2i] = []
 var _path_timer := 0.0
-var _footstep_timer := 0.0
 var _grace_timer := 0.0
 var _break_cell := Vector2i(-1, -1)
 var _break_timer := 0.0
@@ -38,10 +41,10 @@ func reset() -> void:
 		return
 	_path.clear()
 	_path_timer = 0.0
-	_footstep_timer = 0.0
 	_grace_timer = GRACE_TIME
 	_break_cell = Vector2i(-1, -1)
 	_break_timer = 0.0
+	_set_walking_audio(false)
 	var cell := world.choose_professor_cell(MazeWorld.world_to_cell(_target_position()))
 	global_position = MazeWorld.cell_to_world(cell) + Vector3.UP * 1.0
 
@@ -51,16 +54,17 @@ func tick(delta: float) -> void:
 		return
 	_place_name_tag()
 	if _grace_timer > 0.0:
+		_set_walking_audio(false)
 		_grace_timer -= delta
 		return
 	if _break_timer > 0.0:
+		_set_walking_audio(false)
 		_break_timer -= delta
 		rotation.y += delta * 2.0
 		if _break_timer <= 0.0:
 			_destroy_block(_break_cell)
 			_break_cell = Vector2i(-1, -1)
 		return
-	_footstep_timer -= delta
 	_path_timer -= delta
 	if _path_timer <= 0.0:
 		_path_timer = 0.22
@@ -75,10 +79,11 @@ func tick(delta: float) -> void:
 					break
 	if _path.size() >= 2:
 		var next_position := MazeWorld.cell_to_world(_path[1]) + Vector3.UP * 1.0
+		var previous_position := global_position
 		global_position = global_position.move_toward(next_position, SPEED * delta)
-		if _audio and _footstep_timer <= 0.0:
-			_audio.play()
-			_footstep_timer = 0.72
+		_set_walking_audio(not global_position.is_equal_approx(previous_position))
+	else:
+		_set_walking_audio(false)
 
 
 ## Keeps the "PROFESSOR" tag on the face side that points at the player.
@@ -104,6 +109,28 @@ func is_breaking() -> bool:
 
 func break_time_left() -> float:
 	return maxf(_break_timer, 0.0)
+
+
+## End-of-round hook used by main.gd. The professor stops ticking after a
+## win/loss, so its looping walking sound must be stopped explicitly.
+func stop_walking_audio() -> void:
+	_set_walking_audio(false)
+
+
+## Pulses the existing world-space light so XR players receive the same close
+## warning as the desktop screen overlay.
+func set_threat_warning(strength: float, flash: float) -> void:
+	var light := get_node_or_null("ThreatLight") as OmniLight3D
+	if light == null:
+		return
+	if strength <= 0.0:
+		light.light_color = THREAT_RED
+		light.light_energy = 1.2
+		light.omni_range = 3.0
+		return
+	light.light_color = THREAT_RED.lerp(THREAT_BLUE, flash)
+	light.light_energy = 1.2 + strength * lerpf(1.8, 5.0, absf(flash - 0.5) * 2.0)
+	light.omni_range = 3.0 + strength * 3.0
 
 
 func _destroy_block(cell: Vector2i) -> void:
@@ -152,9 +179,20 @@ func _build_visuals() -> void:
 
 func _create_audio() -> void:
 	_audio = AudioStreamPlayer3D.new()
-	_audio.name = "Footsteps"
-	_audio.stream = Tone.make(92.0, 0.18, 0.20, 0.1)
-	_audio.max_distance = MazeWorld.MAZE_SIZE * MazeWorld.CELL_SIZE
+	_audio.name = "ProfessorWalkingSound"
+	var walking_stream := AudioStreamOggVorbis.load_from_file(WALKING_SOUND_PATH)
+	walking_stream.loop = true
+	_audio.stream = walking_stream
+	_audio.max_distance = WALKING_SOUND_RADIUS
 	_audio.unit_size = 1.0
+	_audio.volume_db = -3.0
 	add_child(_audio)
 
+
+func _set_walking_audio(walking: bool) -> void:
+	if _audio == null:
+		return
+	if walking and not _audio.playing:
+		_audio.play()
+	elif not walking and _audio.playing:
+		_audio.stop()
