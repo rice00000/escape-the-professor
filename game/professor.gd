@@ -14,7 +14,6 @@ const THREAT_BLUE := Color("#315cff")
 
 var world: MazeWorld
 var player: MazePlayer
-var _material: Material
 var _path: Array[Vector2i] = []
 var _path_timer := 0.0
 var _grace_timer := 0.0
@@ -22,14 +21,16 @@ var _break_cell := Vector2i(-1, -1)
 var _break_timer := 0.0
 var _audio: AudioStreamPlayer3D
 
-const FACE_HEIGHT := 0.5
-const FACE_OFFSET := 0.42
+## Blender-authored professor, exported facing front (glTF +Z).
+const MODEL := preload("res://assets/models/professor/angry-professor.glb")
+## Name tag floats just above the model's head (actor origin is at 1 m).
+const TAG_HEIGHT := 1.05
+const TURN_SPEED := 8.0
 
 
-func setup(maze_world: MazeWorld, maze_player: MazePlayer, professor_material: Material) -> void:
+func setup(maze_world: MazeWorld, maze_player: MazePlayer) -> void:
 	world = maze_world
 	player = maze_player
-	_material = professor_material
 	if get_node_or_null("Body") == null:
 		_build_visuals()
 	if _audio == null:
@@ -47,12 +48,15 @@ func reset() -> void:
 	_set_walking_audio(false)
 	var cell := world.choose_professor_cell(MazeWorld.world_to_cell(_target_position()))
 	global_position = MazeWorld.cell_to_world(cell) + Vector3.UP * 1.0
+	_face_player(1.0)
 
 
 func tick(delta: float) -> void:
 	if world == null or player == null:
 		return
 	_place_name_tag()
+	if _break_timer <= 0.0:
+		_face_player(minf(TURN_SPEED * delta, 1.0))
 	if _grace_timer > 0.0:
 		_set_walking_audio(false)
 		_grace_timer -= delta
@@ -86,16 +90,21 @@ func tick(delta: float) -> void:
 		_set_walking_audio(false)
 
 
-## Keeps the "PROFESSOR" tag on the face side that points at the player.
-## top_level so the break-spin rotation doesn't swing it around.
+## Keeps the "PROFESSOR" tag above his head. top_level so the break-spin
+## rotation doesn't swing it around.
 func _place_name_tag() -> void:
 	var tag := get_node_or_null("NameTag") as Label3D
 	if tag == null:
 		return
+	tag.global_position = global_position + Vector3.UP * TAG_HEIGHT
+
+
+## Turns the model's front (+Z) toward the player; weight 1.0 snaps.
+func _face_player(weight: float) -> void:
 	var to_player := _target_position() - global_position
-	to_player.y = 0.0
-	var face_dir := to_player.normalized() if to_player.length() > 0.01 else Vector3.FORWARD
-	tag.global_position = global_position + Vector3.UP * FACE_HEIGHT + face_dir * FACE_OFFSET
+	if Vector2(to_player.x, to_player.z).length() < 0.01:
+		return
+	rotation.y = lerp_angle(rotation.y, atan2(to_player.x, to_player.z), weight)
 
 
 ## Chase the player's head (floor-projected), not the XR play-area origin.
@@ -140,24 +149,11 @@ func _destroy_block(cell: Vector2i) -> void:
 
 
 func _build_visuals() -> void:
-	var body := MeshInstance3D.new()
+	var body := MODEL.instantiate() as Node3D
 	body.name = "Body"
-	var body_mesh := CapsuleMesh.new()
-	body_mesh.radius = 0.38
-	body_mesh.height = 1.85
-	body_mesh.material = _material
-	body.mesh = body_mesh
+	# The model's feet are at its origin; the actor floats at 1 m.
+	body.position.y = -1.0
 	add_child(body)
-	var hat := MeshInstance3D.new()
-	hat.name = "Hat"
-	var hat_mesh := CylinderMesh.new()
-	hat_mesh.top_radius = 0.48
-	hat_mesh.bottom_radius = 0.48
-	hat_mesh.height = 0.18
-	hat_mesh.material = _material
-	hat.mesh = hat_mesh
-	hat.position.y = 0.98
-	add_child(hat)
 	var tag := Label3D.new()
 	tag.name = "NameTag"
 	tag.text = "PROFESSOR"
