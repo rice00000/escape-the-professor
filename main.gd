@@ -17,7 +17,7 @@ const WIN_DISTANCE := 0.75
 const CAUGHT_DISTANCE := 0.95
 const THREAT_WARNING_DISTANCE := 4.5
 const THREAT_FLASH_SPEED := 1.6
-const LOSE_SOUND_PATH := "res://assets/audio/you_lose_fast.mp3"
+const LOSE_SOUND := preload("res://assets/audio/you_lose_fast.mp3")
 const CONTROLS_HINT_SECONDS := 7.0
 const CONTROLS_HINT := "Left stick: move  ·  Right stick: turn\nGrip: grab wall  ·  Hold A: restart"
 
@@ -75,7 +75,7 @@ func _ready() -> void:
 	_add(xr_hud, "XRHud")
 	xr_hud.setup(_left_controller, _xr_camera)
 	lose_audio = AudioStreamPlayer.new()
-	lose_audio.stream = AudioStreamMP3.load_from_file(LOSE_SOUND_PATH)
+	lose_audio.stream = LOSE_SOUND
 	_add(lose_audio, "LoseSound")
 
 	_start_round()
