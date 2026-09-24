@@ -7,7 +7,7 @@ class_name ProfessorActor
 const SPEED := 1.6
 const BREAK_TIME := 2.5
 const GRACE_TIME := 2.0
-const WALKING_SOUND_PATH := "res://assets/audio/professor_walking.ogg"
+const WALKING_SOUND := preload("res://assets/audio/professor_walking.ogg")
 const WALKING_SOUND_RADIUS := 6.0
 const THREAT_RED := Color("#ff173d")
 const THREAT_BLUE := Color("#315cff")
@@ -176,7 +176,7 @@ func _build_visuals() -> void:
 func _create_audio() -> void:
 	_audio = AudioStreamPlayer3D.new()
 	_audio.name = "ProfessorWalkingSound"
-	var walking_stream := AudioStreamOggVorbis.load_from_file(WALKING_SOUND_PATH)
+	var walking_stream := WALKING_SOUND as AudioStreamOggVorbis
 	walking_stream.loop = true
 	_audio.stream = walking_stream
 	_audio.max_distance = WALKING_SOUND_RADIUS
